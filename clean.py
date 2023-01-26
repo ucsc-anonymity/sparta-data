@@ -16,6 +16,51 @@ from tqdm import tqdm
 #    - Discards messages where the timestamp is outside the known range for each dataset.
 #    - Preserves the ordering of messages per user by incrementing messages with equal timestamps by 1 millisecond.
 #    - Reorganizes messages so that they can be looked up per user.
+#    - Strips extraneous characters from senders and receivers for a basic approach to entity resolution.
+
+def clean_enron_sender(s):
+    if type(s) is str:
+        s = s.replace("[", "")
+        s = s.replace("]", "")
+        s = s.replace("\'", "")
+        s = s.replace("\"", "")
+        s = s.replace(" ", "")
+        s = s.replace(".", "")
+
+        return s
+    else:
+        return ""
+
+def clean_enron_receiver(s):
+    s = clean_enron_sender(s)
+    s = s.split(",")
+
+    if len(s) != 1:
+        return ""
+    else:
+        return s[0]
+
+def clean_seattle_sender(s):
+    if type(s) is str:
+        s = s.split("<")[0]
+        s = s.split("(")[0]
+        s = s.replace("\"", "")
+        s = s.replace("\'", "")
+        s = s.replace(" ", "")
+
+        return s
+    else:
+        return ""
+
+def clean_seattle_receiver(s):
+    if type(s) is str:
+        s = s.split(";")
+        if len(s) != 1:
+            return ""
+        else:
+            return clean_seattle_sender(s[0])
+    else:
+        return ""
 
 def convert_time(s):
     """
@@ -29,22 +74,22 @@ def convert_time(s):
     except:
         return -1
 
-def correct_types(df):
-    sender_type = df.sender.apply(lambda x: type(x) is str and x.lower() != "nan")
-    receiver_type = df.receiver.apply(lambda x: type(x) is str and x.lower() != "nan")
-    cc_type = df.cc.apply(lambda x: type(x) is not str or x.lower() == "nan")
-    bcc_type = df.bcc.apply(lambda x: type(x) is not str or x.lower() == "nan")
-    keep_type  = sender_type & receiver_type & cc_type & bcc_type
+def correct(df, start, end):
+    sender_correct = df.sender.apply(lambda x: x != "" and x.lower() != "nan")
+    receiver_correct = df.receiver.apply(lambda x: x != "" and x.lower() != "nan")
+    cc_correct = df.cc.apply(lambda x: type(x) is not str or x.lower() == "nan")
+    bcc_correct = df.bcc.apply(lambda x: type(x) is not str or x.lower() == "nan")
+    submit_correct = df.submit.apply(lambda x: start <= x and x <= end)
 
-    return df[keep_type]
+    all_correct = sender_correct & receiver_correct & cc_correct & bcc_correct & submit_correct
+    return df[all_correct]
 
-def clean(df, start, end, sep):
-    df = correct_types(df)
-    one_receiver = df.receiver.apply(lambda x: sep not in x)
-    df = df[one_receiver]
-
+def clean(df, start, end, sender_clean, receiver_clean):
+    df.sender = df.sender.apply(sender_clean)
+    df.receiver = df.receiver.apply(receiver_clean)
     df.submit = df.submit.apply(convert_time)
-    df = df[df.submit.apply(lambda x: x >= start and x <= end)]
+    df = correct(df, start, end)
+
     return df[["sender", "receiver", "submit"]]
 
 def make_unique_ascending(m, col):
@@ -70,17 +115,6 @@ def users(df):
         submits[i] = m[:, 1]
     return pd.DataFrame({"sender": users, "receivers": receivers, "submits": submits})
 
-def active_users(df, min_percentile, max_percentile):
-    """
-    Filters a dataframe, df, such that each user is in the min_percentile to max_percentile range of number of messages sent.
-    """
-
-    lens = df["submits"].apply(len).to_numpy()
-    min = np.percentile(lens, min_percentile)
-    max = np.percentile(lens, max_percentile)
-
-    return df[(lens >= min) & (lens <= max)]
-
 def main(data_path):
     enron_raw_path = os.path.join(data_path, "enron_raw.csv")
     enron_clean_path = os.path.join(data_path, "enron_clean.csv")
@@ -99,8 +133,7 @@ def main(data_path):
 
             enron_start = 490320000 # January 16, 1985
             enron_end = 1007337600 # December 3, 2001
-            clean_enron_df = clean(enron_raw_df, enron_start, enron_end, ",")
-            print(clean_enron_df)
+            clean_enron_df = clean(enron_raw_df, enron_start, enron_end, clean_enron_sender, clean_enron_receiver)
             print("done.")
             clean_enron_df.to_csv(enron_clean_path, index=False)
         else:
@@ -120,7 +153,7 @@ def main(data_path):
 
             seattle_start = 1483228800 # January 1, 2017
             seattle_end = 1491004800 # April 1, 2017
-            clean_seattle_df = clean(seattle_raw_df, seattle_start, seattle_end, ";")
+            clean_seattle_df = clean(seattle_raw_df, seattle_start, seattle_end, clean_seattle_sender, clean_seattle_receiver)
             print("done.")
             clean_seattle_df.to_csv(seattle_clean_path, index=False)
         else:
