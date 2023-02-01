@@ -122,10 +122,12 @@ def users(df):
 
     min = 0
     for i in range(df.shape[0]):
-        if df[i, 0] != df[min, 0] or i == df.shape[0] - 1:
+        if df[i, 0] != df[min, 0]:
             receivers[df[min, 0]] = df[min:i, 1]
             submits[df[min, 0]] = df[min:i, 2]
             min = i
+    receivers[df[min, 0]] = df[min:df.shape[0], 1]
+    submits[df[min, 0]] = df[min:df.shape[0], 2]
 
     return pd.DataFrame({"sender": users, "receivers": receivers, "submits": submits})
 
@@ -172,20 +174,20 @@ def main(data_path, single_senders):
 
     enron_raw_url = "https://files.ssrc.us/data/enron.zip"
     enron_zip_path = os.path.join(enron_data_path, "enron.zip")
-    enron_clean_path = os.path.join(enron_data_path, f"enron_clean{'_s' if single_senders else ''}.csv")
-    enron_senders_path = os.path.join(enron_data_path, f"enron_senders{'_s' if single_senders else ''}.csv")
-    enron_receivers_path = os.path.join(enron_data_path, f"enron_receivers{'_s' if single_senders else ''}.csv")
-    enron_processed_path = os.path.join(enron_data_path, f"enron_processed{'_s' if single_senders else ''}.csv")
+    enron_clean_path = os.path.join(enron_data_path, f"clean{'_s' if single_senders else ''}.csv")
+    enron_senders_path = os.path.join(enron_data_path, f"senders{'_s' if single_senders else ''}.csv")
+    enron_receivers_path = os.path.join(enron_data_path, f"receivers{'_s' if single_senders else ''}.csv")
+    enron_processed_path = os.path.join(enron_data_path, f"processed{'_s' if single_senders else ''}.csv")
     enron_rename = {"From": "sender", "To": "receiver", "X-cc": "cc", "X-bcc": "bcc", "Date": "submit"}
     enron_start = 490320000 # January 16, 1985
     enron_end = 1007337600 # December 3, 2001
 
     seattle_raw_url = "https://files.ssrc.us/data/seattle.zip"
     seattle_zip_path = os.path.join(seattle_data_path, "seattle.zip")
-    seattle_clean_path = os.path.join(seattle_data_path, f"seattle_clean{'_s' if single_senders else ''}.csv")
-    seattle_senders_path = os.path.join(seattle_data_path, f"seattle_senders{'_s' if single_senders else ''}.csv")
-    seattle_receivers_path = os.path.join(seattle_data_path, f"seattle_receivers{'_s' if single_senders else ''}.csv")
-    seattle_processed_path = os.path.join(seattle_data_path, f"seattle_processed{'_s' if single_senders else ''}.csv")
+    seattle_clean_path = os.path.join(seattle_data_path, f"clean{'_s' if single_senders else ''}.csv")
+    seattle_senders_path = os.path.join(seattle_data_path, f"senders{'_s' if single_senders else ''}.csv")
+    seattle_receivers_path = os.path.join(seattle_data_path, f"receivers{'_s' if single_senders else ''}.csv")
+    seattle_processed_path = os.path.join(seattle_data_path, f"processed{'_s' if single_senders else ''}.csv")
     seattle_rename = {"sender": "sender", "to": "receiver", "cc": "cc", "bcc": "bcc", "time": "submit"}
     seattle_start = 1483228800 # January 1, 2017
     seattle_end = 1491004800 # April 1, 2017
