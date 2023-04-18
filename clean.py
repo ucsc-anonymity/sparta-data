@@ -11,12 +11,16 @@ from zipfile import ZipFile
 # This code cleans the enron and seattle datasets.
 #    - Removes non-metadata fields.
 #    - Discards messages where sender/recipient data is unknown.
-#    - Discards messages where there is more than one sender/recipient. We are interested in point to point messages only.
+#    - Discards messages where there is more than one sender/recipient. We are
+#    interested in point to point messages only.
 #    - Parses times into milliseconds since the Unix epoch.
-#    - Discards messages where the timestamp is outside the known range for each dataset.
-#    - Preserves the ordering of messages per user by incrementing messages with equal timestamps by 1 millisecond.
+#    - Discards messages where the timestamp is outside the known range for each
+#    dataset.
+#    - Preserves the ordering of messages per user by incrementing messages with
+#    equal timestamps by 1 millisecond.
 #    - Reorganizes messages so that they can be looked up per user.
-#    - Strips extraneous characters from senders and receivers for a basic approach to entity resolution.
+#    - Strips extraneous characters from senders and receivers for a basic
+#    approach to entity resolution.
 
 def download(url, file_path, data_path):
     """
@@ -148,8 +152,11 @@ def clean(df, start, end, clean_fn, delimiter, single_senders):
 
     return df[clean_cols], user_key
 
-def users(df):
-    df = df[np.lexsort((df[:, 2], df[:, 0]))] # Sorts by sender (0) then submit time (2).
+def senders(df):
+    # df[0] - sender
+    # df[1] - receiver
+    # df[2] - time
+    df = df[np.lexsort((df[:, 2], df[:, 0]))] # Sorts by sender then submit time.
 
     users = np.unique(df[:, 0])
     receivers = np.empty(len(users), dtype=object)
@@ -166,40 +173,67 @@ def users(df):
 
     return pd.DataFrame({"sender": users, "receivers": receivers, "submits": submits})
 
+def receivers(df):
+    # df[0] - sender
+    # df[1] - receiver
+    # df[2] - time
+    df = df[np.lexsort((df[:, 2], df[:, 1]))] # Sorts by receiver then submit time.
+
+    users = np.unique(df[:, 1])
+    senders = np.empty(len(users), dtype=object)
+    submits = np.empty(len(users), dtype=object)
+
+    start = 0
+    end = 0
+    for i in range(len(users)):
+        while end < df.shape[0] and df[start, 1] == df[end,1]:
+            end += 1
+        senders[i] = df[start:end, 0]
+        submits[i] = df[start:end, 2]
+        start = end
+
+    return pd.DataFrame({"receiver": users, "senders": senders, "submits": submits})
+
 def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, single_senders):
     raw_path = os.path.join(data_path, "raw.csv")
     zip_path = os.path.join(data_path, "enron.zip")
     clean_path = os.path.join(data_path, f"clean{'_s' if single_senders else ''}.csv")
     user_key_path = os.path.join(data_path, f"users{'_s' if single_senders else ''}.csv")
-    processed_path = os.path.join(data_path, f"processed{'_s' if single_senders else ''}.csv")
+    senders_processed_path = os.path.join(data_path, f"senders_processed{'_s' if single_senders else ''}.csv")
+    receivers_processed_path = os.path.join(data_path, f"receivers_processed{'_s' if single_senders else ''}.csv")
 
     if not os.path.exists(zip_path):
         print(f"Downloading: {url}...")
         download(url, zip_path, data_path)
         print("done.")
 
-    if not os.path.exists(processed_path):
-        print(f"Creating: {processed_path}...")
+    if not os.path.exists(clean_path):
+        print(f"Creating: {clean_path}...")
 
-        if not os.path.exists(clean_path):
-            print(f"Creating: {clean_path}...")
-
-            raw_df = pd.read_csv(raw_path, usecols=rename.keys())
-            raw_df.rename(columns=rename, inplace=True)
-            clean_df, user_key = clean(raw_df, start, end, clean_sender_fn, delimiter, single_senders)
-            print("done.")
-
-            clean_df.to_csv(clean_path, index=False)
-            user_key.to_csv(user_key_path)
-        else:
-            clean_df = pd.read_csv(clean_path)
-
-        clean_m = clean_df.to_numpy()
-        processed = users(clean_m)
+        raw_df = pd.read_csv(raw_path, usecols=rename.keys())
+        raw_df.rename(columns=rename, inplace=True)
+        clean_df, user_key = clean(raw_df, start, end, clean_sender_fn, delimiter, single_senders)
         print("done.")
-        processed.to_json(processed_path)
 
-def main(data_path, single_senders):
+        clean_df.to_csv(clean_path, index=False)
+        user_key.to_csv(user_key_path)
+    else:
+        clean_df = pd.read_csv(clean_path)
+    clean_m = clean_df.to_numpy()
+
+    if not os.path.exists(senders_processed_path):
+        print(f"Creating: {senders_processed_path}...")
+        senders_processed = senders(clean_m)
+        print("done.")
+        senders_processed.to_json(senders_processed_path)
+
+    if not os.path.exists(receivers_processed_path):
+        print(f"Creating: {receivers_processed_path}...")
+        receivers_processed = receivers(clean_m)
+        print("done.")
+        receivers_processed.to_json(receivers_processed_path)
+
+def main(data_path, single_senders=False):
     if not os.path.exists(data_path):
         os.makedirs(data_path)
 
@@ -221,9 +255,11 @@ def main(data_path, single_senders):
     seattle_start = 1483228800 # January 1, 2017
     seattle_end = 1491004800 # April 1, 2017
 
-    process(enron_raw_url, enron_data_path, enron_rename, enron_start, enron_end, clean_enron, ",", single_senders)
+    process(enron_raw_url, enron_data_path, enron_rename, enron_start, 
+            enron_end, clean_enron, ",", single_senders)
 
-    process(seattle_raw_url, seattle_data_path, seattle_rename, seattle_start, seattle_end, clean_seattle, ";", single_senders)
+    process(seattle_raw_url, seattle_data_path, seattle_rename, seattle_start,
+            seattle_end, clean_seattle, ";", single_senders)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Metadata Cleaner",
