@@ -22,6 +22,7 @@ from zipfile import ZipFile
 #    - Strips extraneous characters from senders and receivers for a basic
 #    approach to entity resolution.
 
+
 def download(url, file_path, data_path):
     """
     Downloads the file at url and saves it to file_path.
@@ -34,6 +35,7 @@ def download(url, file_path, data_path):
 
     with ZipFile(file_path) as z:
         z.extractall(path=data_path)
+
 
 def clean_enron(s):
     """
@@ -50,6 +52,7 @@ def clean_enron(s):
     else:
         return ""
 
+
 def clean_seattle(s):
     """
     Cleans Seattle user names.
@@ -64,6 +67,7 @@ def clean_seattle(s):
         return s
     else:
         return ""
+
 
 def clean_multiple(s, clean_fn, delimiter, single_senders):
     """
@@ -85,6 +89,7 @@ def clean_multiple(s, clean_fn, delimiter, single_senders):
     else:
         return []
 
+
 def convert_time(s):
     """
     Converts string times to a standard float datetime.
@@ -97,6 +102,7 @@ def convert_time(s):
     except:
         return -1
 
+
 def expand(row):
     """
     Expands a tuple with multiple receivers into a data frame,
@@ -108,32 +114,37 @@ def expand(row):
         r[i, 1] = row[1][i]
     return r
 
+
 def correct(df, single_senders):
     """
-    Filters datasets so that sender and receiver information is correct,
-    and if single sender is set, then the cc and bcc fields are invalid.
+    Filters datasets so that sender and receiver information is correct, and if
+    single sender is set, then the cc and bcc fields are invalid.
     """
     sender_correct = df.sender.apply(lambda x: x != "" and x.lower() != "nan")
-    receiver_correct = df.receiver.apply(lambda x: x != "" and x.lower() != "nan")
+    receiver_correct = df.receiver.apply(
+        lambda x: x != "" and x.lower() != "nan")
 
     all_correct = sender_correct & receiver_correct
 
     if single_senders:
-        cc_correct = df.cc.apply(lambda x: type(x) is not str or x.lower() == "nan")
-        bcc_correct = df.bcc.apply(lambda x: type(x) is not str or x.lower() == "nan")
+        cc_correct = df.cc.apply(lambda x: type(
+            x) is not str or x.lower() == "nan")
+        bcc_correct = df.bcc.apply(lambda x: type(
+            x) is not str or x.lower() == "nan")
         all_correct &= cc_correct & bcc_correct
 
     return df[all_correct]
 
+
 def clean(df, start, end, clean_fn, delimiter, single_senders):
     """
     Cleans the dataset. Ensures that sender and receiver information is set,
-    times are between start and end, and that single senders is enforced if it is set.
-    Then factorizes the senders and receivers.
-    Returns a cleaned
+    times are between start and end, and that single senders is enforced if it
+    is set. Then factorizes the senders and receivers. Returns a cleaned
     """
     df.sender = df.sender.apply(clean_fn)
-    df.receiver = df.receiver.apply(lambda x: clean_multiple(x, clean_fn, delimiter, single_senders))
+    df.receiver = df.receiver.apply(lambda x: clean_multiple(
+        x, clean_fn, delimiter, single_senders))
 
     reorder_cols = ["sender", "receiver", "submit", "cc", "bcc"]
     df = df[reorder_cols].to_numpy()
@@ -145,18 +156,25 @@ def clean(df, start, end, clean_fn, delimiter, single_senders):
 
     stacked = df[["sender", "receiver"]].stack()
     sender_receiver, user_key = stacked.factorize()
-    df[["sender", "receiver"]] = pd.Series(sender_receiver, index=stacked.index).unstack()
+    df[["sender", "receiver"]] = pd.Series(
+        sender_receiver, index=stacked.index).unstack()
     clean_cols = ["sender", "receiver", "submit"]
 
     user_key = pd.DataFrame(user_key)
 
     return df[clean_cols], user_key
 
+
 def senders(df):
+    """
+    Process the clean datasets so that for each sender we have a sorted list of
+    when they sent messages and who they sent to.
+    """
     # df[0] - sender
     # df[1] - receiver
     # df[2] - time
-    df = df[np.lexsort((df[:, 2], df[:, 0]))] # Sorts by sender then submit time.
+    # Sorts by sender then submit time.
+    df = df[np.lexsort((df[:, 2], df[:, 0]))]
 
     users = np.unique(df[:, 0])
     receivers = np.empty(len(users), dtype=object)
@@ -165,7 +183,7 @@ def senders(df):
     start = 0
     end = 0
     for i in range(len(users)):
-        while end < df.shape[0] and df[start, 0] == df[end,0]:
+        while end < df.shape[0] and df[start, 0] == df[end, 0]:
             end += 1
         receivers[i] = df[start:end, 1]
         submits[i] = df[start:end, 2]
@@ -173,11 +191,17 @@ def senders(df):
 
     return pd.DataFrame({"sender": users, "receivers": receivers, "submits": submits})
 
+
 def receivers(df):
+    """
+    Processes the clean datasets so that for each receiver we have a sorted list
+    of when they were sent messages and who sent them.
+    """
     # df[0] - sender
     # df[1] - receiver
     # df[2] - time
-    df = df[np.lexsort((df[:, 2], df[:, 1]))] # Sorts by receiver then submit time.
+    # Sorts by receiver then submit time.
+    df = df[np.lexsort((df[:, 2], df[:, 1]))]
 
     users = np.unique(df[:, 1])
     senders = np.empty(len(users), dtype=object)
@@ -186,7 +210,7 @@ def receivers(df):
     start = 0
     end = 0
     for i in range(len(users)):
-        while end < df.shape[0] and df[start, 1] == df[end,1]:
+        while end < df.shape[0] and df[start, 1] == df[end, 1]:
             end += 1
         senders[i] = df[start:end, 0]
         submits[i] = df[start:end, 2]
@@ -194,13 +218,21 @@ def receivers(df):
 
     return pd.DataFrame({"receiver": users, "senders": senders, "submits": submits})
 
+
 def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, single_senders):
+    """
+    Processes the datasets into a more usable form.
+    """
     raw_path = os.path.join(data_path, "raw.csv")
     zip_path = os.path.join(data_path, "enron.zip")
-    clean_path = os.path.join(data_path, f"clean{'_s' if single_senders else ''}.csv")
-    user_key_path = os.path.join(data_path, f"users{'_s' if single_senders else ''}.csv")
-    senders_processed_path = os.path.join(data_path, f"senders_processed{'_s' if single_senders else ''}.csv")
-    receivers_processed_path = os.path.join(data_path, f"receivers_processed{'_s' if single_senders else ''}.csv")
+    clean_path = os.path.join(
+        data_path, f"clean{'_s' if single_senders else ''}.csv")
+    user_key_path = os.path.join(
+        data_path, f"users{'_s' if single_senders else ''}.csv")
+    senders_processed_path = os.path.join(
+        data_path, f"senders_processed{'_s' if single_senders else ''}.csv")
+    receivers_processed_path = os.path.join(
+        data_path, f"receivers_processed{'_s' if single_senders else ''}.csv")
 
     if not os.path.exists(zip_path):
         print(f"Downloading: {url}...")
@@ -212,7 +244,8 @@ def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, sing
 
         raw_df = pd.read_csv(raw_path, usecols=rename.keys())
         raw_df.rename(columns=rename, inplace=True)
-        clean_df, user_key = clean(raw_df, start, end, clean_sender_fn, delimiter, single_senders)
+        clean_df, user_key = clean(
+            raw_df, start, end, clean_sender_fn, delimiter, single_senders)
         print("done.")
 
         clean_df.to_csv(clean_path, index=False)
@@ -233,7 +266,11 @@ def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, sing
         print("done.")
         receivers_processed.to_json(receivers_processed_path)
 
+
 def main(data_path, single_senders=False):
+    """
+    Downloads the datasets if not available, then cleans and processes them.
+    """
     if not os.path.exists(data_path):
         os.makedirs(data_path)
 
@@ -246,26 +283,31 @@ def main(data_path, single_senders=False):
         os.makedirs(seattle_data_path)
 
     enron_raw_url = "https://files.ssrc.us/data/enron.zip"
-    enron_rename = {"From": "sender", "To": "receiver", "X-cc": "cc", "X-bcc": "bcc", "Date": "submit"}
-    enron_start = 490320000 # January 16, 1985
-    enron_end = 1007337600 # December 3, 2001
+    enron_rename = {"From": "sender", "To": "receiver",
+                    "X-cc": "cc", "X-bcc": "bcc", "Date": "submit"}
+    enron_start = 490320000  # January 16, 1985
+    enron_end = 1007337600  # December 3, 2001
 
     seattle_raw_url = "https://files.ssrc.us/data/seattle.zip"
-    seattle_rename = {"sender": "sender", "to": "receiver", "cc": "cc", "bcc": "bcc", "time": "submit"}
-    seattle_start = 1483228800 # January 1, 2017
-    seattle_end = 1491004800 # April 1, 2017
+    seattle_rename = {"sender": "sender", "to": "receiver",
+                      "cc": "cc", "bcc": "bcc", "time": "submit"}
+    seattle_start = 1483228800  # January 1, 2017
+    seattle_end = 1491004800  # April 1, 2017
 
-    process(enron_raw_url, enron_data_path, enron_rename, enron_start, 
+    process(enron_raw_url, enron_data_path, enron_rename, enron_start,
             enron_end, clean_enron, ",", single_senders)
 
     process(seattle_raw_url, seattle_data_path, seattle_rename, seattle_start,
             seattle_end, clean_seattle, ";", single_senders)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Metadata Cleaner",
                                      description="This code downloads and cleans the Enron and Seattle Email datasets.")
-    parser.add_argument("path", type=str, help="Data path to look for data files and store generated data files.")
-    parser.add_argument("-s", action="store_true", help="If flag is specified, the cleaning process will ensure each recipient has exactly one receiver.")
+    parser.add_argument(
+        "path", type=str, help="Data path to look for data files and store generated data files.")
+    parser.add_argument("-s", action="store_true",
+                        help="If flag is specified, the cleaning process will ensure each recipient has exactly one receiver.")
     args = parser.parse_args()
 
     data_path = os.path.abspath(args.path)
