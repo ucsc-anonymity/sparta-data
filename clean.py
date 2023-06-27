@@ -161,8 +161,10 @@ def clean(df, start, end, clean_fn, delimiter, single_senders):
     clean_cols = ["sender", "receiver", "submit"]
 
     user_key = pd.DataFrame(user_key)
+    df = df[clean_cols]
+    df.sort_values(by=["submit"], inplace=True)
 
-    return df[clean_cols], user_key
+    return df, user_key
 
 
 def senders(df):
@@ -244,8 +246,7 @@ def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, sing
 
         raw_df = pd.read_csv(raw_path, usecols=rename.keys())
         raw_df.rename(columns=rename, inplace=True)
-        clean_df, user_key = clean(
-            raw_df, start, end, clean_sender_fn, delimiter, single_senders)
+        clean_df, user_key = clean(raw_df, start, end, clean_sender_fn, delimiter, single_senders)
         print("done.")
 
         clean_df.to_csv(clean_path, index=False)
