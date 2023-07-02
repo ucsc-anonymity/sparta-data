@@ -222,7 +222,7 @@ def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, sing
     Processes the datasets into a more usable form.
     """
     raw_path = os.path.join(data_path, "raw.csv")
-    zip_path = os.path.join(data_path, "enron.zip")
+    zip_path = os.path.join(data_path, "raw.zip")
     clean_path = os.path.join(data_path, f"clean{'_s' if single_senders else ''}.csv")
     user_key_path = os.path.join(data_path, f"users{'_s' if single_senders else ''}.csv")
     senders_processed_path = os.path.join(data_path, f"senders_processed{'_s' if single_senders else ''}.csv")
@@ -260,7 +260,7 @@ def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, sing
         receivers_processed.to_json(receivers_processed_path)
 
 
-def main(data_path, single_senders=False):
+def main(data_path, single_senders=False, enron=False, seattle=False):
     """
     Downloads the datasets if not available, then cleans and processes them.
     """
@@ -285,23 +285,25 @@ def main(data_path, single_senders=False):
     seattle_start = 1483228800  # January 1, 2017
     seattle_end = 1491004800  # April 1, 2017
 
-    process(enron_raw_url, enron_data_path, enron_rename, enron_start,
-            enron_end, clean_enron, ",", single_senders)
+    if enron:
+        process(enron_raw_url, enron_data_path, enron_rename,
+                enron_start, enron_end, clean_enron, ",", single_senders)
 
-    process(seattle_raw_url, seattle_data_path, seattle_rename, seattle_start,
-            seattle_end, clean_seattle, ";", single_senders)
+    if seattle:
+        process(seattle_raw_url, seattle_data_path, seattle_rename,
+                seattle_start, seattle_end, clean_seattle, ";", single_senders)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="Metadata Cleaner", description="This code downloads and cleans the Enron and Seattle Email datasets.")
-    parser.add_argument(
-        "path", type=str, help="Data path to look for data files and store generated data files.")
-    parser.add_argument(
-        "-s", action="store_true", help="If flag is specified, the cleaning process will ensure each recipient has exactly one receiver.")
+    parser.add_argument("path", type=str, help="Data path to look for data files and store generated data files.")
+    parser.add_argument("--single-receiver", action="store_true",
+                        help="The cleaning process will ensure each message has exactly one receiver.")
+    parser.add_argument("--enron", action="store_true", help="Generate enron data.")
+    parser.add_argument("--seattle", action="store_true", help="Generate seattle data.")
     args = parser.parse_args()
 
     data_path = os.path.abspath(args.path)
-    single_senders = args.s
 
-    main(data_path, single_senders)
+    clean(data_path, args.single_receiver, args.enron, args.seattle)
