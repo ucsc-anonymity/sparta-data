@@ -140,8 +140,8 @@ def clean(df, start, end, clean_fn, delimiter, single_senders):
     is set. Then factorizes the senders and receivers. Returns a cleaned
     """
     df.sender = df.sender.apply(clean_fn)
-    df.receiver = df.receiver.apply(lambda x: clean_multiple(
-        x, clean_fn, delimiter, single_senders))
+    df.receiver = df.receiver.apply(lambda x:
+                                    clean_multiple(x, clean_fn, delimiter, single_senders))
 
     reorder_cols = ["sender", "receiver", "submit", "cc", "bcc"]
     df = df[reorder_cols].to_numpy()
@@ -158,7 +158,7 @@ def clean(df, start, end, clean_fn, delimiter, single_senders):
 
     user_key = pd.DataFrame(user_key)
     df = df[clean_cols]
-    df.sort_values(by=["submit"], inplace=True)
+    df.sort_values(by=["submit", "sender", "receiver"], inplace=True)
 
     return df, user_key
 
@@ -225,10 +225,10 @@ def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, sing
     zip_path = os.path.join(data_path, "raw.zip")
     clean_path = os.path.join(data_path, f"clean{'_s' if single_senders else ''}.csv")
     user_key_path = os.path.join(data_path, f"users{'_s' if single_senders else ''}.csv")
-    senders_processed_path = os.path.join(
-        data_path, f"senders_processed{'_s' if single_senders else ''}.csv")
-    receivers_processed_path = os.path.join(
-        data_path, f"receivers_processed{'_s' if single_senders else ''}.csv")
+    senders_processed_path = os.path.join(data_path,
+                                          f"senders_processed{'_s' if single_senders else ''}.csv")
+    receivers_processed_path = os.path.join(data_path,
+                                            f"receivers_processed{'_s' if single_senders else ''}.csv")
 
     if not os.path.exists(zip_path):
         print(f"Downloading: {url}...")
