@@ -23,18 +23,17 @@ from zipfile import ZipFile
 #    approach to entity resolution.
 
 
-def download(url, file_path, data_path):
+def active_users(df, min_percentile, max_percentile):
     """
-    Downloads the file at url and saves it to file_path.
+    Filters a dataframe, df, such that each user is in the min_percentile to
+    max_percentile range based on number of messages submitted.
     """
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        with open(file_path, "wb") as file:
-            for d in r.iter_content(chunk_size=8192):
-                file.write(d)
 
-    with ZipFile(file_path) as z:
-        z.extractall(path=data_path)
+    lens = df.submits.apply(len).to_numpy()
+    min = np.percentile(lens, min_percentile)
+    max = np.percentile(lens, max_percentile)
+
+    return df[(lens >= min) & (lens <= max)]
 
 
 def clean_enron(s):
@@ -67,6 +66,53 @@ def clean_seattle(s):
         return s
     else:
         return ""
+
+
+ENRON_PARAMETERS = (
+    "https://files.ssrc.us/data/enron.zip",  # url
+    "enron",  # path
+    ",",  # delimiter
+    {  # rename
+        "From": "sender",
+        "To": "receiver",
+        "X-cc": "cc",
+        "X-bcc": "bcc",
+        "Date": "submit"
+    },
+    clean_enron,  # cleaning function
+    490320000,  # start: January 16, 1985
+    1007337600,  # end: December 3, 2001
+)
+
+SEATTLE_PARAMETERS = (
+    "https://files.ssrc.us/data/seattle.zip",  # url
+    "seattle",  # path
+    ";",  # delimiter
+    {  # rename
+        "sender": "sender",
+        "to": "receiver",
+        "cc": "cc",
+        "bcc": "bcc",
+        "time": "submit"
+    },
+    clean_seattle,  # cleaning function
+    1483228800,  # start: January 1, 2017
+    1491004800,  # end: April 1, 2017
+)
+
+
+def download(url, file_path, data_path):
+    """
+    Downloads the file at url and saves it to file_path.
+    """
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        with open(file_path, "wb") as file:
+            for d in r.iter_content(chunk_size=8192):
+                file.write(d)
+
+    with ZipFile(file_path) as z:
+        z.extractall(path=data_path)
 
 
 def clean_multiple(s, clean_fn, delimiter, single_senders):
@@ -156,7 +202,7 @@ def clean(df, start, end, clean_fn, delimiter, single_senders):
     df[["sender", "receiver"]] = pd.Series(sender_receiver, index=stacked.index).unstack()
     clean_cols = ["sender", "receiver", "submit"]
 
-    user_key = pd.DataFrame(user_key)
+    user_key = pd.DataFrame(user_key, columns=["user"])
     df = df[clean_cols]
     df.sort_values(by=["submit", "sender", "receiver"], inplace=True)
 
@@ -217,98 +263,61 @@ def receivers(df):
     return pd.DataFrame({"receiver": users, "senders": senders, "submits": submits})
 
 
-def process(url, data_path, rename, start, end, clean_sender_fn, delimiter, single_senders):
+# data_path, *parameters, single senders
+def process(data_path, url, dataset_name, delimiter, rename, clean_sender_fn, start, end, single_senders):
     """
     Processes the datasets into a more usable form.
     """
-    raw_path = os.path.join(data_path, "raw.csv")
-    zip_path = os.path.join(data_path, "raw.zip")
-    clean_path = os.path.join(data_path, f"clean{'_s' if single_senders else ''}.csv")
-    user_key_path = os.path.join(data_path, f"users{'_s' if single_senders else ''}.csv")
-    senders_processed_path = os.path.join(data_path,
-                                          f"senders_processed{'_s' if single_senders else ''}.csv")
-    receivers_processed_path = os.path.join(data_path,
-                                            f"receivers_processed{'_s' if single_senders else ''}.csv")
 
+    dataset_path = os.path.join(data_path, dataset_name)
+    if not os.path.exists(dataset_path):
+        os.makedirs(dataset_path)
+
+    zip_path = os.path.join(dataset_path, "raw.zip")
     if not os.path.exists(zip_path):
         print(f"Downloading: {url}...")
-        download(url, zip_path, data_path)
+        download(url, zip_path, dataset_path)
         print("done.")
 
+    clean_path = os.path.join(dataset_path, f"clean{'_s' if single_senders else ''}.csv")
     if not os.path.exists(clean_path):
         print(f"Creating: {clean_path}...")
 
+        raw_path = os.path.join(dataset_path, "raw.csv")
         raw_df = pd.read_csv(raw_path, usecols=rename.keys())
         raw_df.rename(columns=rename, inplace=True)
         clean_df, user_key = clean(raw_df, start, end, clean_sender_fn, delimiter, single_senders)
         print("done.")
 
         clean_df.to_csv(clean_path, index=False)
+
+        user_key_path = os.path.join(dataset_path, f"users{'_s' if single_senders else ''}.csv")
         user_key.to_csv(user_key_path)
     else:
         clean_df = pd.read_csv(clean_path)
     clean_m = clean_df.to_numpy()
 
-    if not os.path.exists(senders_processed_path):
-        print(f"Creating: {senders_processed_path}...")
-        senders_processed = senders(clean_m)
-        print("done.")
-        senders_processed.to_json(senders_processed_path)
 
-    if not os.path.exists(receivers_processed_path):
-        print(f"Creating: {receivers_processed_path}...")
-        receivers_processed = receivers(clean_m)
-        print("done.")
-        receivers_processed.to_json(receivers_processed_path)
-
-
-def active_users(df, min_percentile, max_percentile):
-    """
-    Filters a dataframe, df, such that each user is in the min_percentile to
-    max_percentile range based on number of messages submitted.
-    """
-
-    lens = df.submits.apply(len).to_numpy()
-    min = np.percentile(lens, min_percentile)
-    max = np.percentile(lens, max_percentile)
-
-    return df[(lens >= min) & (lens <= max)]
-
-
-def main(data_path, single_senders=False, enron=False, seattle=False):
+def generate_data(data_path, dataset, single_senders=False):
     """
     Downloads the datasets if not available, then cleans and processes them.
     """
-    if not os.path.exists(data_path):
-        os.makedirs(data_path)
 
-    enron_data_path = os.path.join(data_path, "enron")
-    if not os.path.exists(enron_data_path):
-        os.makedirs(enron_data_path)
+    if dataset == "enron":
+        parameters = ENRON_PARAMETERS
+    elif dataset == "seattle":
+        parameters = SEATTLE_PARAMETERS
+    else:
+        raise ValueError("Unrecognized dataset. Expects `enron` or `seattle`.")
 
-    seattle_data_path = os.path.join(data_path, "seattle")
-    if not os.path.exists(seattle_data_path):
-        os.makedirs(seattle_data_path)
+    process(data_path, *parameters, single_senders)
 
-    enron_raw_url = "https://files.ssrc.us/data/enron.zip"
-    enron_rename = {"From": "sender", "To": "receiver",
-                    "X-cc": "cc", "X-bcc": "bcc", "Date": "submit"}
-    enron_start = 490320000  # January 16, 1985
-    enron_end = 1007337600  # December 3, 2001
 
-    seattle_raw_url = "https://files.ssrc.us/data/seattle.zip"
-    seattle_rename = {"sender": "sender", "to": "receiver",
-                      "cc": "cc", "bcc": "bcc", "time": "submit"}
-    seattle_start = 1483228800  # January 1, 2017
-    seattle_end = 1491004800  # April 1, 2017
-
+def main(path, enron, seattle, single_sender):
     if enron:
-        process(enron_raw_url, enron_data_path, enron_rename,
-                enron_start, enron_end, clean_enron, ",", single_senders)
-
+        generate_data(path, "enron", single_sender)
     if seattle:
-        process(seattle_raw_url, seattle_data_path, seattle_rename,
-                seattle_start, seattle_end, clean_seattle, ";", single_senders)
+        generate_data(path, "seattle", single_sender)
 
 
 if __name__ == "__main__":
@@ -324,4 +333,4 @@ if __name__ == "__main__":
 
     data_path = os.path.abspath(args.path)
 
-    main(data_path, args.single_receiver, args.enron, args.seattle)
+    main(data_path, args.enron, args.seattle, args.single_receiver)
