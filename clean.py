@@ -23,19 +23,6 @@ from zipfile import ZipFile
 #    approach to entity resolution.
 
 
-def active_users(df, min_percentile, max_percentile):
-    """
-    Filters a dataframe, df, such that each user is in the min_percentile to
-    max_percentile range based on number of messages submitted.
-    """
-
-    lens = df.submits.apply(len).to_numpy()
-    min = np.percentile(lens, min_percentile)
-    max = np.percentile(lens, max_percentile)
-
-    return df[(lens >= min) & (lens <= max)]
-
-
 def clean_enron(s):
     """
     Cleans Enron user names.
@@ -295,7 +282,6 @@ def process(data_path, url, dataset_name, delimiter, rename, clean_sender_fn, st
         user_key.to_csv(user_key_path)
     else:
         clean_df = pd.read_csv(clean_path)
-    clean_m = clean_df.to_numpy()
 
 
 def generate_data(data_path, dataset, single_senders=False):
