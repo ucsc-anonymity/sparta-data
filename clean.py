@@ -278,26 +278,19 @@ def process(data_path, url, dataset_name, delimiter, rename, clean_sender_fn, st
         clean_df = pd.read_csv(clean_path)
 
 
-def generate_data(data_path, dataset):
+def main(data_path, enron, seattle):
     """
     Downloads the datasets if not available, then cleans and processes them.
     """
 
-    if dataset == "enron":
+    if enron:
         parameters = ENRON_PARAMETERS
-    elif dataset == "seattle":
+    elif seattle:
         parameters = SEATTLE_PARAMETERS
     else:
         raise ValueError("Unrecognized dataset. Expects `enron` or `seattle`.")
 
     process(data_path, *parameters)
-
-
-def main(path, enron, seattle):
-    if enron:
-        generate_data(path, "enron")
-    if seattle:
-        generate_data(path, "seattle")
 
 
 if __name__ == "__main__":
