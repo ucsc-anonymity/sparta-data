@@ -102,23 +102,18 @@ def download(url, file_path, data_path):
         z.extractall(path=data_path)
 
 
-def clean_multiple(s, clean_fn, delimiter, single_senders):
+def clean_multiple(s, clean_fn, delimiter):
     """
     Cleans multiple user names.
 
     s - the user names in a string.
     clean_fn - the function to clean individual user names.
     delimiter - the string that marks the end of a user name.
-    single_sender - a flag to indicate whether multiple user names are allowed,
-        in which case they are parsed into an array.
     """
     if type(s) is str:
         s = [clean_fn(r) for r in s.split(delimiter)]
 
-        if single_senders and len(s) != 1:
-            return []
-        else:
-            return s
+        return s
     else:
         return []
 
@@ -148,45 +143,41 @@ def expand(row):
     return r
 
 
-def correct(df, single_senders):
+def correct(df):
     """
-    Filters datasets so that sender and receiver information is correct, and if
-    single sender is set, then the cc and bcc fields are invalid.
+    Filters datasets so that sender and receiver information is correct.
     """
     sender_correct = df.sender.apply(lambda x: x != "" and x.lower() != "nan")
-    receiver_correct = df.receiver.apply(lambda x: x != "" and x.lower() != "nan")
+    receiver_correct = df.receiver.apply(
+        lambda x: x != "" and x.lower() != "nan")
 
     all_correct = sender_correct & receiver_correct
-
-    if single_senders:
-        cc_correct = df.cc.apply(lambda x: type(x) is not str or x.lower() == "nan")
-        bcc_correct = df.bcc.apply(lambda x: type(x) is not str or x.lower() == "nan")
-        all_correct &= cc_correct & bcc_correct
 
     return df[all_correct]
 
 
-def clean(df, start, end, clean_fn, delimiter, single_senders):
+def clean(df, start, end, clean_fn, delimiter):
     """
-    Cleans the dataset. Ensures that sender and receiver information is set,
-    times are between start and end, and that single senders is enforced if it
-    is set. Then factorizes the senders and receivers. Returns a cleaned
+    Cleans the dataset. Ensures that sender and receiver information is set, and
+    times are between start and end. Then factorizes the senders and receivers.
+    Returns a cleaned dataframe.
     """
     df.sender = df.sender.apply(clean_fn)
     df.receiver = df.receiver.apply(lambda x:
-                                    clean_multiple(x, clean_fn, delimiter, single_senders))
+                                    clean_multiple(x, clean_fn, delimiter))
 
     reorder_cols = ["sender", "receiver", "submit", "cc", "bcc"]
     df = df[reorder_cols].to_numpy()
     df = np.concatenate([expand(df[i, :]) for i in range(df.shape[0])], axis=0)
     df = pd.DataFrame(df, columns=reorder_cols)
-    df = correct(df, single_senders)
+    df = correct(df)
     df.submit = df.submit.apply(convert_time)
     df = df[df.submit.apply(lambda x: start <= x and x <= end)]
 
     stacked = df[["sender", "receiver"]].stack()
     sender_receiver, user_key = stacked.factorize()
-    df[["sender", "receiver"]] = pd.Series(sender_receiver, index=stacked.index).unstack()
+    df[["sender", "receiver"]] = pd.Series(
+        sender_receiver, index=stacked.index).unstack()
     clean_cols = ["sender", "receiver", "submit"]
 
     user_key = pd.DataFrame(user_key, columns=["user"])
@@ -250,8 +241,8 @@ def receivers(df):
     return pd.DataFrame({"receiver": users, "senders": senders, "submits": submits})
 
 
-# data_path, *parameters, single senders
-def process(data_path, url, dataset_name, delimiter, rename, clean_sender_fn, start, end, single_senders):
+# data_path, *parameters
+def process(data_path, url, dataset_name, delimiter, rename, clean_sender_fn, start, end):
     """
     Processes the datasets into a more usable form.
     """
@@ -266,25 +257,28 @@ def process(data_path, url, dataset_name, delimiter, rename, clean_sender_fn, st
         download(url, zip_path, dataset_path)
         print("done.")
 
-    clean_path = os.path.join(dataset_path, f"clean{'_s' if single_senders else ''}.csv")
+    clean_path = os.path.join(
+        dataset_path, f"clean.csv")
     if not os.path.exists(clean_path):
         print(f"Creating: {clean_path}...")
 
         raw_path = os.path.join(dataset_path, "raw.csv")
         raw_df = pd.read_csv(raw_path, usecols=rename.keys())
         raw_df.rename(columns=rename, inplace=True)
-        clean_df, user_key = clean(raw_df, start, end, clean_sender_fn, delimiter, single_senders)
+        clean_df, user_key = clean(
+            raw_df, start, end, clean_sender_fn, delimiter)
         print("done.")
 
         clean_df.to_csv(clean_path, index=False)
 
-        user_key_path = os.path.join(dataset_path, f"users{'_s' if single_senders else ''}.csv")
+        user_key_path = os.path.join(
+            dataset_path, f"users.csv")
         user_key.to_csv(user_key_path)
     else:
         clean_df = pd.read_csv(clean_path)
 
 
-def generate_data(data_path, dataset, single_senders=False):
+def generate_data(data_path, dataset):
     """
     Downloads the datasets if not available, then cleans and processes them.
     """
@@ -296,14 +290,14 @@ def generate_data(data_path, dataset, single_senders=False):
     else:
         raise ValueError("Unrecognized dataset. Expects `enron` or `seattle`.")
 
-    process(data_path, *parameters, single_senders)
+    process(data_path, *parameters)
 
 
-def main(path, enron, seattle, single_sender):
+def main(path, enron, seattle):
     if enron:
-        generate_data(path, "enron", single_sender)
+        generate_data(path, "enron")
     if seattle:
-        generate_data(path, "seattle", single_sender)
+        generate_data(path, "seattle")
 
 
 if __name__ == "__main__":
@@ -311,12 +305,12 @@ if __name__ == "__main__":
         prog="Metadata Cleaner", description="This code downloads and cleans the Enron and Seattle Email datasets.")
     parser.add_argument(
         "path", type=str, help="Data path to look for data files and store generated data files.")
-    parser.add_argument("--single-receiver", action="store_true",
-                        help="The cleaning process will ensure each message has exactly one receiver.")
-    parser.add_argument("--enron", action="store_true", help="Generate enron data.")
-    parser.add_argument("--seattle", action="store_true", help="Generate seattle data.")
+    parser.add_argument("--enron", action="store_true",
+                        help="Generate enron data.")
+    parser.add_argument("--seattle", action="store_true",
+                        help="Generate seattle data.")
     args = parser.parse_args()
 
     data_path = os.path.abspath(args.path)
 
-    main(data_path, args.enron, args.seattle, args.single_receiver)
+    main(data_path, args.enron, args.seattle)
