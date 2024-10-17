@@ -143,36 +143,34 @@ def expand(row):
     return r
 
 
-def correct(df):
-    """
-    Filters datasets so that sender and receiver information is correct.
-    """
-    sender_correct = df.sender.apply(lambda x: x != "" and x.lower() != "nan")
-    receiver_correct = df.receiver.apply(
-        lambda x: x != "" and x.lower() != "nan")
-
-    all_correct = sender_correct & receiver_correct
-
-    return df[all_correct]
-
-
 def clean(df, start, end, clean_fn, delimiter):
     """
     Cleans the dataset. Ensures that sender and receiver information is set, and
     times are between start and end. Then factorizes the senders and receivers.
     Returns a cleaned dataframe.
     """
+    print("initial: ", df.shape)
     df.sender = df.sender.apply(clean_fn)
     df.receiver = df.receiver.apply(lambda x:
                                     clean_multiple(x, clean_fn, delimiter))
+    df.submit = df.submit.apply(convert_time)
 
     reorder_cols = ["sender", "receiver", "submit", "cc", "bcc"]
     df = df[reorder_cols].to_numpy()
     df = np.concatenate([expand(df[i, :]) for i in range(df.shape[0])], axis=0)
+    print("expansion: ", df.shape)
+
     df = pd.DataFrame(df, columns=reorder_cols)
-    df = correct(df)
-    df.submit = df.submit.apply(convert_time)
-    df = df[df.submit.apply(lambda x: start <= x and x <= end)]
+    sender_correct = df.sender.apply(lambda x: x != "" and x.lower() != "nan")
+    print("senders: ", sum(sender_correct), len(sender_correct))
+    receiver_correct = df.receiver.apply(
+        lambda x: x != "" and x.lower() != "nan")
+    print("receivers: ", sum(receiver_correct), len(receiver_correct))
+    time_correct = df.submit.apply(lambda x: start <= x and x <= end)
+    print("time: ", sum(time_correct), len(time_correct))
+    all_correct = sender_correct & receiver_correct & time_correct
+    df = df[all_correct]
+    print("final: ", df.shape)
 
     stacked = df[["sender", "receiver"]].stack()
     sender_receiver, user_key = stacked.factorize()
@@ -185,60 +183,6 @@ def clean(df, start, end, clean_fn, delimiter):
     df.sort_values(by=["submit", "sender", "receiver"], inplace=True)
 
     return df, user_key
-
-
-def senders(df):
-    """
-    Process the clean datasets so that for each sender we have a sorted list of
-    when they sent messages and who they sent to.
-    """
-    # df[0] - sender
-    # df[1] - receiver
-    # df[2] - time
-    # Sorts by sender then submit time.
-    df = df[np.lexsort((df[:, 2], df[:, 0]))]
-
-    users = np.unique(df[:, 0])
-    receivers = np.empty(len(users), dtype=object)
-    submits = np.empty(len(users), dtype=object)
-
-    start = 0
-    end = 0
-    for i in range(len(users)):
-        while end < df.shape[0] and df[start, 0] == df[end, 0]:
-            end += 1
-        receivers[i] = df[start:end, 1]
-        submits[i] = df[start:end, 2]
-        start = end
-
-    return pd.DataFrame({"sender": users, "receivers": receivers, "submits": submits})
-
-
-def receivers(df):
-    """
-    Processes the clean datasets so that for each receiver we have a sorted list
-    of when they were sent messages and who sent them.
-    """
-    # df[0] - sender
-    # df[1] - receiver
-    # df[2] - time
-    # Sorts by receiver then submit time.
-    df = df[np.lexsort((df[:, 2], df[:, 1]))]
-
-    users = np.unique(df[:, 1])
-    senders = np.empty(len(users), dtype=object)
-    submits = np.empty(len(users), dtype=object)
-
-    start = 0
-    end = 0
-    for i in range(len(users)):
-        while end < df.shape[0] and df[start, 1] == df[end, 1]:
-            end += 1
-        senders[i] = df[start:end, 0]
-        submits[i] = df[start:end, 2]
-        start = end
-
-    return pd.DataFrame({"receiver": users, "senders": senders, "submits": submits})
 
 
 # data_path, *parameters
