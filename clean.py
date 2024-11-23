@@ -67,7 +67,7 @@ ENRON_PARAMETERS = (
         "Date": "submit"
     },
     clean_enron,  # cleaning function
-    490320000,  # start: January 16, 1985
+    490338000,  # start: July 16, 1985
     1007337600,  # end: December 3, 2001
 )
 
@@ -174,6 +174,7 @@ def clean(df, start, end, clean_fn, delimiter):
 
     stacked = df[["sender", "receiver"]].stack()
     sender_receiver, user_key = stacked.factorize()
+    print("users: ", np.unique(user_key).shape)
     df[["sender", "receiver"]] = pd.Series(
         sender_receiver, index=stacked.index).unstack()
     clean_cols = ["sender", "receiver", "submit"]
